@@ -1,0 +1,91 @@
+_schema-version: "3.1"
+ID: CAPMProject
+description: A simple CAP project.
+version: 1.0.0
+modules:
+  - name: CAPMProject-srv
+    type: nodejs
+    path: gen/srv
+    requires:
+      - name: CAPMProject-auth
+      - name: CAPMProject-db
+      - name: CAPMProject-logging
+      - name: CAPMProject-destination
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+    parameters:
+      buildpack: nodejs_buildpack
+    build-parameters:
+      builder: npm
+  - name: CAPMProject-db-deployer
+    type: hdb
+    path: gen/db
+    requires:
+      - name: CAPMProject-db
+    parameters:
+      buildpack: nodejs_buildpack
+  - name: CAPMProject
+    type: approuter.nodejs
+    path: app/
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          forwardAuthToken: true
+          name: srv-api
+          url: ~{srv-url}
+      - name: CAPMProject-auth
+      - name: CAPMProject-logging
+    parameters:
+      disk-quota: 256M
+      keep-existing-routes: true
+      memory: 256M
+resources:
+  - name: CAPMProject-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        tenant-mode: dedicated
+        xsappname: CAPMProject-${org}-${space}
+      path: ./xs-security.json
+      xsappname: 'CAPMClass-${space}'
+      role-collections:
+      - name: 'RiskManager-${space}'
+        description: Manage Risks
+        role-template-references:
+        - $XSAPPNAME.RiskManager
+      - name: 'RiskViewer-${space}'
+        description: View Risks
+        role-template-references:
+        - $XSAPPNAME.RiskViewer
+      service: xsuaa
+      service-plan: application
+  - name: CAPMProject-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+  - name: CAPMProject-logging
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: application-logs
+      service-plan: lite
+  - name: CAPMProject_html_repo_host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host
+  - name: CAPMProject-destination
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: destination
+      service-plan: lite
+parameters:
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npx cds build --production
